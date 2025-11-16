@@ -1,5 +1,0 @@
-# Ignore all node_modules folders (both client and server)
-**/node_modules/
-
-# Ignore all .env files in any subfolder (including server/.env)
-**/.env
