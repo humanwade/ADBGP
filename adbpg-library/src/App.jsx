@@ -1,34 +1,52 @@
 import React from 'react'
-import { Routes, Route } from 'react-router-dom'
-import { Box } from '@mui/material'
-import Menu from "../core/Menu";
-import Books from '../book/Books'
-import AddBook from '../book/AddBook'
-import EditBook from '../book/EditBook'
-import Patrons from '../patron/Patrons'
-import Loans from '../loan/Loans'
-import Reports from '../report/Reports'
-import Settings from '../settings/Settings'
-import Users from '../user/Users'
-import Home from '../core/Home'
+import { Routes, Route, Navigate } from 'react-router-dom'
 
-export default function App(){
+import DashboardLayout from '../src/components/Layout/DashboardLayout' 
+import ProtectedRoute from '../src/components/Layout/ProtectedRoute'
+
+import LoginPage from '../src/pages/LoginPage'
+import SignupPage from '../src/pages/SignupPage'
+
+import HomePage from '../src/pages/HomePage'
+import BookListPage from '../src/pages/BookListPage'
+import AddBookPage from '../src/pages/AddBookPage'
+import EditBookPage from '../src/pages/EditBookPage'
+import PatronListPage from '../src/pages/PatronListPage'
+import AddPatronPage from '../src/pages/AddPatronPage'
+import EditPatronPage from '../src/pages/EditPatronPage'
+import LoanListPage from '../src/pages/LoanListPage'
+import AddLoanPage from '../src/pages/AddLoanPage'
+import ReportPage from '../src/pages/ReportPage'
+import SettingsPage from '../src/pages/SettingsPage'
+
+export default function App() {
   return (
-    <Box sx={{ display:'flex', minHeight:'100vh' }}>
-      <Menu />
-      <Box component="main" sx={{ flex:1, bgcolor:'#f5f5f5' }}>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/books" element={<Books />} />
-          <Route path="/books/add" element={<AddBook />} />
-          <Route path="/books/edit/:id" element={<EditBook />} />
-          <Route path="/patrons" element={<Patrons />} />
-          <Route path="/loans" element={<Loans />} />
-          <Route path="/reports" element={<Reports />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/users" element={<Users />} />
-        </Routes>
-      </Box>
-    </Box>
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/signup" element={<SignupPage />} />
+
+      <Route element={<ProtectedRoute />}>
+        <Route element={<DashboardLayout />}>
+          
+          <Route path="/" element={<HomePage />} />
+
+          <Route path="/books" element={<BookListPage />} />
+          <Route path="/books/add" element={<AddBookPage />} />
+          <Route path="/books/edit/:id" element={<EditBookPage />} />
+
+          <Route path="/patrons" element={<PatronListPage />} />
+          <Route path="/patrons/add" element={<AddPatronPage />} />
+          <Route path="/patrons/edit/:id" element={<EditPatronPage />} />
+
+          <Route path="/loans" element={<LoanListPage />} />
+          <Route path="/loans/add" element={<AddLoanPage />} />
+
+          <Route path="/reports" element={<ReportPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          
+        </Route>
+      </Route>
+      <Route path="*" element={<Navigate to="/signup" replace />} />
+    </Routes>
   )
 }

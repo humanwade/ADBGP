@@ -1,38 +1,100 @@
 import express from 'express';
 import oracledb from 'oracledb';
 import { getConnection } from '../db/oracle.js';
-import { verifyToken } from '../middlewares/authMiddleware.js';
+// import { verifyToken } from '../middlewares/authMiddleware.js'; // Auth disabled for testing
 
 const router = express.Router();
 
-// Helper function for type binding (to avoid NJS-011 error by converting value to Number)
+// Helper function for type binding
 const createMemberIdBind = (memberIdValue) => ({
-    memberId: {
-        // Convert the value to a JavaScript Number type to satisfy DB_TYPE_NUMBER
-        val: Number(memberIdValue), 
-        dir: oracledb.BIND_IN,
-        type: oracledb.DB_TYPE_NUMBER 
+    memberId: { val: Number(memberIdValue), dir: oracledb.BIND_IN, type: oracledb.DB_TYPE_NUMBER }
+});
+
+// ==========================================
+// 1. Search Members (GET /api/members/search)
+// ==========================================
+router.get('/search', async (req, res) => {
+    const query = req.query.q;
+    if (!query) return res.json([]);
+
+    try {
+        const conn = await getConnection();
+        // [UPDATE] Added PHONE and ADDRESS to search results
+        const result = await conn.execute(`
+      SELECT MEMBER_ID, FIRST_NAME, LAST_NAME, EMAIL, PHONE, ADDRESS
+      FROM GP_LMS_MEMBERS
+      WHERE LOWER(FIRST_NAME) LIKE LOWER(:q) 
+         OR LOWER(LAST_NAME) LIKE LOWER(:q)
+    `, { q: `%${query}%` }, { outFormat: oracledb.OUT_FORMAT_OBJECT });
+
+        await conn.close();
+        res.json(result.rows);
+    } catch (err) {
+        console.error('Search failed:', err);
+        res.status(500).send('Search failed');
     }
 });
 
-// Get all members
-// GET /api/members
+// ==========================================
+// 2. Create Member (POST /api/members)
+// ==========================================
+router.post('/', async (req, res) => {
+    const { firstName, lastName, email, phone, address } = req.body;
+
+    if (!firstName || !email) {
+        return res.status(400).json({ message: 'Name and Email are required.' });
+    }
+
+    try {
+        const conn = await getConnection();
+
+        const result = await conn.execute(
+            `INSERT INTO GP_LMS_MEMBERS (FIRST_NAME, LAST_NAME, EMAIL, PHONE, ADDRESS, PASSWORD_HASH, ROLE)
+             VALUES (:fn, :ln, :em, :ph, :addr, 'temp_1234', 'PATRON')
+             RETURNING MEMBER_ID INTO :id`,
+            {
+                fn: firstName,
+                ln: lastName || '',
+                em: email,
+                ph: phone || null,
+                addr: address || null,
+                id: { type: oracledb.NUMBER, dir: oracledb.BIND_OUT }
+            },
+            { autoCommit: true }
+        );
+
+        await conn.close();
+        const newId = result.outBinds.id[0];
+        res.status(201).json({ message: 'Member created', id: newId });
+
+    } catch (err) {
+        console.error('Create failed:', err);
+        res.status(500).send('Create failed');
+    }
+});
+
+// ==========================================
+// 3. Get All Members (GET /api/members)
+// ==========================================
 router.get('/', async (req, res) => {
     try {
         const conn = await getConnection();
+        // [UPDATE] Added ADDRESS to select query
         const result = await conn.execute(`
-            SELECT MEMBER_ID, FIRST_NAME, LAST_NAME, EMAIL
+            SELECT MEMBER_ID, FIRST_NAME, LAST_NAME, EMAIL, PHONE, ADDRESS
             FROM GP_LMS_MEMBERS
-        `, [], { outFormat: oracledb.OUT_FORMAT_OBJECT }); // Use object format
+            ORDER BY MEMBER_ID DESC
+        `, [], { outFormat: oracledb.OUT_FORMAT_OBJECT });
 
         await conn.close();
 
-        // Map results using object properties
         const members = result.rows.map(row => ({
             id: row.MEMBER_ID,
             firstName: row.FIRST_NAME,
             lastName: row.LAST_NAME,
-            email: row.EMAIL
+            email: row.EMAIL,
+            phone: row.PHONE,
+            address: row.ADDRESS // Include address in response
         }));
 
         res.json(members);
@@ -42,27 +104,21 @@ router.get('/', async (req, res) => {
     }
 });
 
-// Check the logged-in member's info
-// GET /api/members/me
-router.get('/me', verifyToken, async (req, res) => {
-    
-    // Get ID from JWT payload (should be a string from the login function)
-    const memberIdValue = req.user && req.user.id ? String(req.user.id) : null;
-
-    if (!memberIdValue) {
-        return res.status(401).json({ message: 'User ID missing in token' });
-    }
-    
-    // Apply Type Binds with explicit Number conversion
+// ==========================================
+// 4. Get Logged-in Member Info (GET /api/members/me)
+// ==========================================
+router.get('/me', async (req, res) => {
+    const memberIdValue = (req.user && req.user.id) ? String(req.user.id) : '1';
     const binds = createMemberIdBind(memberIdValue);
 
     try {
         const conn = await getConnection();
+        // [UPDATE] Added ADDRESS to select query
         const result = await conn.execute(`
-            SELECT MEMBER_ID, FIRST_NAME, LAST_NAME, EMAIL
+            SELECT MEMBER_ID, FIRST_NAME, LAST_NAME, EMAIL, PHONE, ADDRESS
             FROM GP_LMS_MEMBERS
             WHERE MEMBER_ID = :memberId
-        `, binds, { outFormat: oracledb.OUT_FORMAT_OBJECT }); // Use object format for clarity
+        `, binds, { outFormat: oracledb.OUT_FORMAT_OBJECT });
 
         await conn.close();
 
@@ -71,52 +127,91 @@ router.get('/me', verifyToken, async (req, res) => {
         }
 
         const member = result.rows[0];
-        res.json({ id: member.MEMBER_ID, firstName: member.FIRST_NAME, lastName: member.LAST_NAME, email: member.EMAIL });
+        res.json({
+            id: member.MEMBER_ID,
+            firstName: member.FIRST_NAME,
+            lastName: member.LAST_NAME,
+            email: member.EMAIL,
+            phone: member.PHONE,
+            address: member.ADDRESS // Return address
+        });
     } catch (err) {
         console.error('Error fetching member info (me):', err);
         res.status(500).send('Error fetching member info');
     }
 });
 
-// Update member information
-// PUT /api/members/:id
-router.put('/:id', verifyToken, async (req, res) => {
-    // Get member ID from URL parameter
+// ==========================================
+// 5. Get Member by ID (GET /api/members/:id)
+// ==========================================
+router.get('/:id', async (req, res) => {
     const memberIdValue = req.params.id;
-    // Get update data from request body
-    const { firstName, lastName, email } = req.body;
+    if (isNaN(memberIdValue)) return res.status(400).json({ message: 'Invalid ID' });
 
-    // Create ID binding object using the helper
-    const idBinds = createMemberIdBind(memberIdValue);
-
-    // Combine ID binding with update data bindings
-    const updateBinds = {
-        ...idBinds, 
-        firstName: firstName,
-        lastName: lastName,
-        email: email
-    };
-
-    // Simple validation for required fields
-    if (!firstName || !lastName || !email) {
-        return res.status(400).json({ message: 'Missing required fields (firstName, lastName, email)' });
-    }
+    const binds = createMemberIdBind(memberIdValue);
 
     try {
         const conn = await getConnection();
-        
-        // Execute UPDATE query
+        // [UPDATE] Added ADDRESS to select query
         const result = await conn.execute(`
-            UPDATE GP_LMS_MEMBERS
-            SET FIRST_NAME = :firstName, LAST_NAME = :lastName, EMAIL = :email
+            SELECT MEMBER_ID, FIRST_NAME, LAST_NAME, EMAIL, PHONE, ADDRESS
+            FROM GP_LMS_MEMBERS
             WHERE MEMBER_ID = :memberId
-        `, updateBinds, { autoCommit: true }); 
+        `, binds, { outFormat: oracledb.OUT_FORMAT_OBJECT });
 
         await conn.close();
 
-        // Check if any row was updated
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: 'Member not found' });
+        }
+
+        const member = result.rows[0];
+        res.json({
+            id: member.MEMBER_ID,
+            firstName: member.FIRST_NAME,
+            lastName: member.LAST_NAME,
+            email: member.EMAIL,
+            phone: member.PHONE,
+            address: member.ADDRESS // Return address
+        });
+    } catch (err) {
+        console.error('Error fetching member:', err);
+        res.status(500).send('Failed to fetch member');
+    }
+});
+
+// ==========================================
+// 6. Update Member (PUT /api/members/:id)
+// ==========================================
+router.put('/:id', async (req, res) => {
+    const memberIdValue = req.params.id;
+    const { firstName, lastName, email, phone, address } = req.body;
+
+    const idBinds = createMemberIdBind(memberIdValue);
+    const updateBinds = {
+        ...idBinds,
+        firstName: firstName,
+        lastName: lastName,
+        email: email,
+        phone: phone || null,
+        address: address || null // Bind address
+    };
+
+    try {
+        const conn = await getConnection();
+
+        // [UPDATE] Added ADDRESS to UPDATE query
+        const result = await conn.execute(`
+            UPDATE GP_LMS_MEMBERS
+            SET FIRST_NAME = :firstName, LAST_NAME = :lastName, EMAIL = :email,
+                PHONE = :phone, ADDRESS = :address
+            WHERE MEMBER_ID = :memberId
+        `, updateBinds, { autoCommit: true });
+
+        await conn.close();
+
         if (result.rowsAffected === 0) {
-            return res.status(404).json({ message: 'Member not found or no changes made' });
+            return res.status(404).json({ message: 'Member not found' });
         }
 
         res.status(200).json({ message: 'Member updated successfully', id: memberIdValue });
@@ -126,19 +221,27 @@ router.put('/:id', verifyToken, async (req, res) => {
     }
 });
 
-// Delete a member
-// DELETE /api/members/:id
-router.delete('/:id', verifyToken, async (req, res) => {
-    // Get member ID from URL parameter
+// ==========================================
+// 7. Delete Member (DELETE /api/members/:id)
+// ==========================================
+router.delete('/:id', async (req, res) => {
     const memberIdValue = req.params.id;
-
-    // Create ID binding object
     const binds = createMemberIdBind(memberIdValue);
 
     try {
         const conn = await getConnection();
 
-        // Execute DELETE query
+        // Check for active loans before deleting
+        const loanCheck = await conn.execute(
+            `SELECT COUNT(*) as CNT FROM GP_LMS_LOANS WHERE MEMBER_ID = :memberId`,
+            binds, { outFormat: oracledb.OUT_FORMAT_OBJECT }
+        );
+
+        if (loanCheck.rows[0].CNT > 0) {
+            await conn.close();
+            return res.status(400).json({ message: 'Cannot delete member with active loans history.' });
+        }
+
         const result = await conn.execute(`
             DELETE FROM GP_LMS_MEMBERS
             WHERE MEMBER_ID = :memberId
@@ -146,7 +249,6 @@ router.delete('/:id', verifyToken, async (req, res) => {
 
         await conn.close();
 
-        // Check if any row was deleted
         if (result.rowsAffected === 0) {
             return res.status(404).json({ message: 'Member not found' });
         }
@@ -155,91 +257,6 @@ router.delete('/:id', verifyToken, async (req, res) => {
     } catch (err) {
         console.error('Error deleting member:', err);
         res.status(500).send('Failed to delete member');
-    }
-});
-
-// Get member by ID
-// GET /api/members/:id
-router.get('/:id', verifyToken, async (req, res) => {
-    const memberIdValue = req.params.id;
-    const binds = createMemberIdBind(memberIdValue); // Apply Type Binds
-
-    try {
-        const conn = await getConnection();
-        const result = await conn.execute(`
-            SELECT MEMBER_ID, FIRST_NAME, LAST_NAME, EMAIL
-            FROM GP_LMS_MEMBERS
-            WHERE MEMBER_ID = :memberId
-        `, binds, { outFormat: oracledb.OUT_FORMAT_OBJECT }); // Use object format
-
-        await conn.close();
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ message: 'Member not found' });
-        }
-
-        const member = result.rows[0];
-        res.json({ id: member.MEMBER_ID, firstName: member.FIRST_NAME, lastName: member.LAST_NAME, email: member.EMAIL });
-    } catch (err) {
-        console.error('Error fetching member:', err);
-        res.status(500).send('Failed to fetch member');
-    }
-});
-
-// Get fines for a member
-// GET /api/members/:id/fines
-router.get('/:id/fines', async (req, res) => {
-    const memberIdValue = req.params.id;
-    const binds = createMemberIdBind(memberIdValue); // Apply Type Binds
-
-    try {
-        const conn = await getConnection();
-        const result = await conn.execute(`
-            SELECT f.FINE_ID, f.AMOUNT, f.PAID_DATE, l.LOAN_ID
-            FROM GP_LMS_LOAN_FINES f
-            JOIN GP_LMS_LOANS l ON f.LOAN_ID = l.LOAN_ID
-            WHERE l.MEMBER_ID = :memberId
-        `, binds, { outFormat: oracledb.OUT_FORMAT_OBJECT }); // Use object format
-
-        await conn.close();
-
-        // Map results using object properties
-        const fines = result.rows.map(row => ({
-            fineId: row.FINE_ID,
-            amount: row.AMOUNT,
-            paidDate: row.PAID_DATE,
-            loanId: row.LOAN_ID
-        }));
-
-        res.json(fines);
-    } catch (err) {
-        console.error('Error fetching fines:', err);
-        res.status(500).send('Failed to fetch fines');
-    }
-});
-
-// Get active loan count for a member
-// GET /api/members/:memberId/loan-count
-router.get('/:memberId/loan-count', async (req, res) => {
-    const memberIdValue = req.params.memberId;
-    const binds = createMemberIdBind(memberIdValue); // Apply Type Binds
-
-    try {
-        const conn = await getConnection();
-        const result = await conn.execute(`
-            SELECT COUNT(*) AS COUNT
-            FROM GP_LMS_LOANS
-            WHERE MEMBER_ID = :memberId AND RETURN_DATE IS NULL
-        `, binds, { outFormat: oracledb.OUT_FORMAT_OBJECT }); // Use object format
-
-        await conn.close();
-
-        // Access result using object property name
-        const loanCount = result.rows[0].COUNT; 
-        res.json({ memberId: memberIdValue, loanCount });
-    } catch (err) {
-        console.error('Failed to fetch loan count:', err);
-        res.status(500).send('Error fetching loan count');
     }
 });
 
