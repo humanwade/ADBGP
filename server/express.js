@@ -7,6 +7,7 @@ import membersRouter from './routes/members.js';
 import authRouter from './routes/auth.js';
 import settingsRouter from './routes/settings.js';
 import reportsRouter from './routes/reports.js';
+import publisherRouter from './routes/publishers.js';
 
 const app = express();
 
@@ -19,6 +20,7 @@ app.use('/api/members', membersRouter);
 app.use('/api/loans', loansRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/reports', reportsRouter);
+app.use('/api/publishers', publisherRouter); 
 app.get('/', (req, res) => {
   res.send('GP-LMS Server Running!');
 });

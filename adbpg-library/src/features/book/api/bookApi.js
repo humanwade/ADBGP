@@ -8,3 +8,4 @@ export const updateBook = (id, payload) => axios.put(`/api/books/${id}`, payload
 export const deleteBook = (id) => axios.delete(`/api/books/${id}`).then(r => r.data)
 export const searchBooks = (q) => axios.get(`/api/books/search?q=${encodeURIComponent(q)}`).then(r => r.data)
 export const getAvailableBooks = () => axios.get('/api/books/available').then(r => r.data);
+export const getPublishers = async () => {const response = await axios.get('/api/publishers'); return response.data;};

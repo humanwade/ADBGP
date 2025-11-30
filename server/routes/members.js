@@ -94,7 +94,7 @@ router.get('/', async (req, res) => {
             lastName: row.LAST_NAME,
             email: row.EMAIL,
             phone: row.PHONE,
-            address: row.ADDRESS // Include address in response
+            address: row.ADDRESS 
         }));
 
         res.json(members);

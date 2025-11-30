@@ -68,7 +68,7 @@ router.get('/overdue', async (req, res) => {
         B.TITLE, 
         M.FIRST_NAME || ' ' || M.LAST_NAME AS PATRON_NAME,
         TO_CHAR(L.DUE_DATE, 'YYYY-MM-DD') AS DUE_DATE,
-        TRUNC(SYSDATE - L.DUE_DATE) * 0.5 AS EST_FINE -- 예: 하루당 $0.5 연체료 계산
+        TRUNC(SYSDATE - L.DUE_DATE) * 0.5 AS EST_FINE 
       FROM GP_LMS_LOANS L
       JOIN GP_LMS_BOOK_COPIES C ON L.COPY_ID = C.COPY_ID
       JOIN GP_LMS_BOOKS B ON C.BOOK_ID = B.BOOK_ID
