@@ -2,11 +2,21 @@ import oracledb from 'oracledb';
 import dotenv from 'dotenv';
 
 dotenv.config();
+console.log('읽어온 값:', process.env.IS_INTERNAL);
+console.log('값의 길이:', process.env.IS_INTERNAL ? process.env.IS_INTERNAL.length : '값 없음');
+
+const isInternal = process.env.IS_INTERNAL === 'true';
+
+const currentHost = isInternal 
+  ? process.env.ORACLE_HOST_INTERNAL 
+  : process.env.ORACLE_HOST_EXTERNAL;
+
+console.log(`Trying to connect to Oracle DB via: ${currentHost} (${isInternal ? 'Internal' : 'External'})`);
 
 const dbConfig = {
   user: process.env.ORACLE_USER,
   password: process.env.ORACLE_PASSWORD,
-  connectString: `(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=${process.env.ORACLE_HOST})(PORT=${process.env.ORACLE_PORT}))(CONNECT_DATA=(SID=${process.env.ORACLE_SID})))`
+  connectString: `(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=${currentHost})(PORT=${process.env.ORACLE_PORT}))(CONNECT_DATA=(SID=${process.env.ORACLE_SID})))`
 };
 
 export async function getConnection() {

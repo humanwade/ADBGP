@@ -1,5 +1,16 @@
-// src/features/report/api/reportApi.js
-import axios from '../../../utils/axiosClient'
-export const getStats = () => axios.get('/api/reports/stats').then(r => r.data)
-export const getOverdue = () => axios.get('/api/reports/overdue').then(r => r.data)
-export const getPopular = () => axios.get('/api/reports/popular').then(r => r.data)
+import axios from 'axios';
+
+export const getStats = async () => {
+  const response = await axios.get('/api/reports/stats');
+  return response.data;
+};
+
+export const getPopular = async () => {
+  const response = await axios.get('/api/reports/popular');
+  return response.data;
+};
+
+export const getOverdue = async () => {
+  const response = await axios.get('/api/reports/overdue');
+  return response.data;
+};
